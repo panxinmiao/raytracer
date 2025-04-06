@@ -48,14 +48,21 @@ class Material(np.ndarray, gfx.Material):
     def __new__(cls, *args, **kwargs):
         return np.zeros(1, dtype=np.dtype([
             ('color', np.float32, 3),
-            ('specular_or_ior', np.float32),
+            ("metallic", np.float32),
+            ('emissive', np.float32, 3),
+            ('roughness', np.float32),
+            ('ior', np.float32),
+            ('__padding', np.uint32, 3),
         ])).view(cls)
 
     
-    def __init__(self, color=(1, 1, 1), specular_or_ior=0):
+    def __init__(self, color=(1, 1, 1), metallic=0, emissive=(0, 0, 0), roughness=1.0, ior=0.0):
         super().__init__()
         self["color"] = color
-        self["specular_or_ior"] = specular_or_ior
+        self["metallic"] = metallic
+        self["emissive"] = emissive
+        self["roughness"] = roughness
+        self["ior"] = ior
     
 
 class Scene:
@@ -117,20 +124,21 @@ class Scene:
 
         for i in range(len(materials_cache)):
             material = materials_cache[i]
-            specular_or_ior = 0
 
             if isinstance(material, Material):
                 materials.append(material)
             else:
                 color = material.color
                 if isinstance(material, gfx.MeshPhongMaterial):
-                    specular_or_ior = material.specular
+                    metallic = 1.0
+                    roughness = 0.0
+                    emissive = material.emissive
                 elif isinstance(material, gfx.MeshStandardMaterial):
-                    specular_or_ior = 1-material.roughness
-                elif isinstance(material, gfx.MeshPhysicalMaterial):
-                    specular_or_ior = -material.ior
+                    metallic = material.metalness
+                    roughness = material.roughness
+                    emissive = material.emissive
 
-                materials.append(Material(color, specular_or_ior))
+                materials.append(Material(color, metallic, emissive, roughness))
 
 
         scene = Scene()

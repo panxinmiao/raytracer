@@ -48,13 +48,13 @@ def create_scene():
     ground_mat = Material((0.5, 0.5, 0.5), 0.0)
 
     ball_1 = Sphere((0, 0.5, 0), 0.5, 1)
-    mat_1 = Material((1.0, 1.0, 1.0), -1.5)
+    mat_1 = Material((1.0, 1.0, 1.0), ior=1.5)
 
     ball_2 = Sphere((-2, 0.5, 0), 0.5, 2)
     mat_2 = Material((0.4, 0.2, 0.1), 0.0)
 
     ball_3 = Sphere((2, 0.5, 0), 0.5, 3)
-    mat_3 = Material((0.7, 0.6, 0.5), 1.0)
+    mat_3 = Material((0.7, 0.6, 0.5), 1.0, roughness=0.0)
 
     spheres = [ground, ball_1, ball_2, ball_3]
     mats = [ground_mat, mat_1, mat_2, mat_3]
@@ -85,17 +85,16 @@ def create_scene():
         choose_mat = random.random()
         if choose_mat < 0.6:
             # diffuse
-            mat['specular_or_ior'] = 0.0
             mat['color'] = np.random.uniform(0.0, 1.0, 3) * np.random.uniform(0.0, 1.0, 3)
         elif choose_mat < 0.8:
             # metal
-            mat['specular_or_ior'] = np.random.uniform(0.5, 1.0)
             mat['color'] = np.random.uniform(0.5, 1.0, 3)
+            mat['roughness'] = np.random.uniform(0.0, 0.5)
+            mat['metallic'] = 1.0
         else:
             # glass
-            mat['specular_or_ior'] = -1.5
             mat['color'] = (1.0, 1.0, 1.0)
-            # mat['color'] = np.random.uniform(0.0, 1.0, 3)
+            mat['ior'] = np.random.uniform(1.0, 2.5)
         
         mats.append(mat)
 

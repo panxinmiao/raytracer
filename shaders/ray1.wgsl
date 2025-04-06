@@ -91,19 +91,18 @@ fn ray_color(primary_ray: Ray) -> vec3<f32> {
 
         let material = materials[hit.material_index];
 
-        if material.specular_or_ior > 1. {
+        // emissive light source
+        if any(material.emissive > vec3f(0.)) {
             // If the material is a light source, add its color to the radiance sample and terminate the path.
-
             // face
             let is_front_face = dot(ray.direction, hit.normal) < 0.;
-            if is_front_face{
-                radiance_sample += throughput * material.color * material.specular_or_ior;
+            if is_front_face {
+                radiance_sample += throughput * material.emissive;
             }
-            break;
         }
 
         let scattered = scatter(ray, hit, material);
-        throughput *= scattered.attenuation;
+        throughput *= min(scattered.attenuation, vec3f(1.0));
 
         if all(throughput == vec3(0.)) {
             break;

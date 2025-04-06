@@ -21,10 +21,10 @@ MAX_BOUNCES = 50
 def create_scene():
     gfx_scene = gfx.Scene()
 
-    red = Material((0.65, 0.05, 0.05), 0.0)
-    green = Material((0.12, 0.45, 0.12), 0.0)
-    white = Material((0.73, 0.73, 0.73), 0.0)
-    light = Material((1.0, 1.0, 1.0), 15.0)
+    red = Material((0.65, 0.05, 0.05), roughness=1.0)
+    green = Material((0.12, 0.45, 0.12), roughness=1.0)
+    white = Material((0.73, 0.73, 0.73), roughness=1.0)
+    light = Material((0.0, 0.0, 0.0), emissive=(15.0, 15.0, 15.0), roughness=1.0)
 
 
     # Cornell box scene
@@ -101,7 +101,7 @@ def create_scene():
     box1_bottom_mesh.local.rotation = la.quat_from_euler((math.pi/2, 0, 0))
     box1_bottom_mesh.local.position = (0, -BOX_SIZE, 0)
 
-    specular = Material((1., 1., 1.), 1.0)
+    specular = Material((1., 1., 1.), roughness=0.0, metallic=1.0)
     box1_front = gfx.plane_geometry(width=BOX_SIZE, height=BOX_SIZE*2)
     box1_front_mesh = gfx.Mesh(box1_front, specular)
     box1_front_mesh.local.rotation = la.quat_from_euler((0, 0, 0))
