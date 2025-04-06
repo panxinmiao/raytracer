@@ -1,5 +1,5 @@
 @group(0) @binding(0)
-var<storage> spheres: array<Sphere>;
+var<storage> spheres: array<Triangle>;
 
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
@@ -40,6 +40,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var ray = get_camera_ray(cam, global_id.xy);
 
     var color = ray_color(ray);
+
+    color = clamp(color, vec3f(0.0), vec3f(15.0));
 
     if frame_counter > 1u {
         let prev_color = textureLoad(output_texture, global_id.xy);

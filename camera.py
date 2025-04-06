@@ -122,11 +122,12 @@ class OrbitCamera:
 
 
     def zoom(self, delta):
-        self.distance -= delta
-        self.distance = max(0, self.distance)
+        scale = 1 - delta / 10
+        if scale < 0.1:
+            scale = 0.1
 
+        self.distance *=  scale
         self.buffer_data["origin"] = self.center - self.distance * self.buffer_data["w"]
-
         self._need_update_buffer = True
 
     

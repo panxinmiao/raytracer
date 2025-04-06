@@ -63,13 +63,47 @@ fn intersect_scene(ray: Ray) -> Intersection {
     closest_hit.t = FLT_MAX;
     for (var i = 0u; i < OBJECTS_COUNT_IN_SCENE; i += 1u) {
         let sphere = spheres[i];
-        let hit = intersect_sphere(ray, sphere);
+        // let hit = intersect_sphere(ray, sphere);
+        let hit = intersect_triangle(ray, sphere);
         if hit.t > 0.0 && hit.t < closest_hit.t {
             closest_hit = hit;
         }
     }
     if closest_hit.t < FLT_MAX {
         return closest_hit;
+    }
+    return no_intersection();
+}
+
+// todo: use ptr
+fn intersect_triangle(ray: Ray, triangle: Triangle) -> Intersection {
+    // Moller–Trumbore intersection algorithm
+    let edge1 = triangle.p1 - triangle.p0;
+    let edge2 = triangle.p2 - triangle.p0;
+    let h = cross(ray.direction, edge2);
+    let a = dot(edge1, h);
+    if a > -EPSILON && a < EPSILON {
+        return no_intersection();
+    }
+    let f = 1.0 / a;
+    let s = ray.origin - triangle.p0;
+    let u = f * dot(s, h);
+    if u < 0.0 || u > 1.0 {
+        return no_intersection();
+    }
+    let q = cross(s, edge1);
+    let v = f * dot(ray.direction, q);
+    if v < 0.0 || u + v > 1.0 {
+        return no_intersection();
+    }
+    let t = f * dot(edge2, q);
+    if t > EPSILON {
+        // let p = point_on_ray(ray, t);
+        let p = triangle.p0 + u * edge1 + v * edge2;
+
+        // let N = normalize(cross(edge1, edge2));
+        let N = normalize(triangle.n0 * (1. - u - v) + triangle.n1 * u + triangle.n2 * v);
+        return Intersection(N, t, triangle.material_index);
     }
     return no_intersection();
 }
@@ -86,11 +120,23 @@ fn ray_color(primary_ray: Ray) -> vec3<f32> {
         let hit = intersect_scene(ray);
         if !is_intersection_valid(hit) {
             // If no intersection was found, return the color of the sky and terminate the path.
-            radiance_sample += throughput * sky_color(ray);
+            // radiance_sample += throughput * sky_color(ray);
             break;
         }
 
         let material = materials[hit.material_index];
+
+        if material.specular_or_ior > 1. {
+            // If the material is a light source, add its color to the radiance sample and terminate the path.
+
+            // face
+            let is_front_face = dot(ray.direction, hit.normal) < 0.;
+            if is_front_face{
+                radiance_sample += throughput * material.color * material.specular_or_ior;
+            }
+            break;
+        }
+
         let scattered = scatter(ray, hit, material);
         throughput *= scattered.attenuation;
 

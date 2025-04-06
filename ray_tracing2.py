@@ -1,12 +1,13 @@
 import wgpu
 import numpy as np
-import random
 import math
 from wgpu.utils.imgui import Stats
 from wgpu.gui.auto import WgpuCanvas, run
 from pathlib import Path
 from camera import OrbitCamera
-from scene import Sphere, Material
+from scene import Material, Scene
+import pygfx as gfx
+import pylinalg as la
 
 
 IMAGE_WIDTH = 1280
@@ -17,93 +18,128 @@ COMPUTE_WORKGROUP_SIZE_Y = 8
 MAX_BOUNCES = 50
 
 
-# class Sphere(np.ndarray):
-#     def __new__(cls, center=(0, 0, 0), radius=1, material_index=0):
-#         na = np.zeros(1, dtype=np.dtype([
-#             ('center', np.float32, 3),
-#             ('radius', np.float32),
-#             ('material_index', np.uint32),
-#             ('__padding', np.uint32, 3),
-#         ])).view(cls)
-
-#         na['center'] = center
-#         na['radius'] = radius
-#         na['material_index'] = material_index
-#         return na
-    
-# class Material(np.ndarray):
-#     def __new__(cls, color=(1, 1, 1), specular_or_ior=0):
-#         na = np.zeros(1, dtype=np.dtype([
-#             ('color', np.float32, 3),
-#             ('specular_or_ior', np.float32),
-#         ])).view(cls)
-
-#         na['color'] = color
-#         na['specular_or_ior'] = specular_or_ior
-#         return na
-    
-
 def create_scene():
-    ground = Sphere((0, -1000, 0.0), 1000.0, 0)
-    ground_mat = Material((0.5, 0.5, 0.5), 0.0)
+    gfx_scene = gfx.Scene()
 
-    ball_1 = Sphere((0, 0.5, 0), 0.5, 1)
-    mat_1 = Material((1.0, 1.0, 1.0), -1.5)
+    red = Material((0.65, 0.05, 0.05), 0.0)
+    green = Material((0.12, 0.45, 0.12), 0.0)
+    white = Material((0.73, 0.73, 0.73), 0.0)
+    light = Material((1.0, 1.0, 1.0), 15.0)
 
-    ball_2 = Sphere((-2, 0.5, 0), 0.5, 2)
-    mat_2 = Material((0.4, 0.2, 0.1), 0.0)
 
-    ball_3 = Sphere((2, 0.5, 0), 0.5, 3)
-    mat_3 = Material((0.7, 0.6, 0.5), 1.0)
+    # Cornell box scene
 
-    spheres = [ground, ball_1, ball_2, ball_3]
-    mats = [ground_mat, mat_1, mat_2, mat_3]
+    ROOM_SIZE = 55.5
+    BOX_SIZE = 16.5
 
-    for i in range(400):
-        while True:
-            sphere = Sphere()
-            r = np.random.uniform(0.05, 0.1)
-            r = 0.1
-            sphere['radius'] = r
+    HALF_ROOM_SIZE = ROOM_SIZE / 2
 
-            sphere['center'] = [np.random.uniform(-4, 4), r, np.random.uniform(-4, 4)]
-            sphere['material_index'] = i + 4
+    wall_geometry = gfx.plane_geometry(width=ROOM_SIZE, height=ROOM_SIZE)
 
-            overlap = False
-            for existing_sphere in spheres:
-                distance = np.linalg.norm(sphere['center'] - existing_sphere['center'])
-                if distance < sphere['radius'] + existing_sphere['radius']:
-                    overlap = True
-                    break
-            
-            if not overlap:
-                spheres.append(sphere)
-                break
+    # left wall
+    left_wall_mesh = gfx.Mesh(wall_geometry, red)
+    left_wall_mesh.local.position = (-HALF_ROOM_SIZE, 0, 0)
+    left_wall_mesh.local.rotation = la.quat_from_euler((0, math.pi/2, 0))
+    gfx_scene.add(left_wall_mesh)
 
-        mat = Material()
+    # right wall
+    right_wall_mesh = gfx.Mesh(wall_geometry, green)
+    right_wall_mesh.local.position = (HALF_ROOM_SIZE, 0, 0)
+    right_wall_mesh.local.rotation = la.quat_from_euler((0, math.pi/2, 0))
+    gfx_scene.add(right_wall_mesh)
 
-        choose_mat = random.random()
-        if choose_mat < 0.6:
-            # diffuse
-            mat['specular_or_ior'] = 0.0
-            mat['color'] = np.random.uniform(0.0, 1.0, 3) * np.random.uniform(0.0, 1.0, 3)
-        elif choose_mat < 0.8:
-            # metal
-            mat['specular_or_ior'] = np.random.uniform(0.5, 1.0)
-            mat['color'] = np.random.uniform(0.5, 1.0, 3)
-        else:
-            # glass
-            mat['specular_or_ior'] = -1.5
-            mat['color'] = (1.0, 1.0, 1.0)
-            # mat['color'] = np.random.uniform(0.0, 1.0, 3)
-        
-        mats.append(mat)
+    # floor
+    floor_mesh = gfx.Mesh(wall_geometry, white)
+    floor_mesh.local.position = (0, -HALF_ROOM_SIZE, 0)
+    floor_mesh.local.rotation = la.quat_from_euler((math.pi/2, 0, 0))
+    gfx_scene.add(floor_mesh)
 
-    
-    spheres_b = np.concatenate(spheres)
-    materials_b = np.concatenate(mats)
+    # ceiling
+    ceiling_mesh = gfx.Mesh(wall_geometry, white)
+    ceiling_mesh.local.position = (0, HALF_ROOM_SIZE, 0)
+    ceiling_mesh.local.rotation = la.quat_from_euler((math.pi/2, 0, 0))
+    gfx_scene.add(ceiling_mesh)
 
-    return spheres_b, materials_b
+    # front wall
+    front_wall_mesh = gfx.Mesh(wall_geometry, white)
+    front_wall_mesh.local.position = (0, 0, HALF_ROOM_SIZE)
+    front_wall_mesh.local.rotation = la.quat_from_euler((0, 0, 0))
+    gfx_scene.add(front_wall_mesh)
+
+    # light
+    light_g = gfx.plane_geometry(width=13, height=10.5)
+    light_mesh = gfx.Mesh(light_g, light)
+    light_mesh.local.position = (0, HALF_ROOM_SIZE-1, 0)
+    light_mesh.local.rotation = la.quat_from_euler((math.pi/2, 0, 0))
+    gfx_scene.add(light_mesh)
+
+
+    box1_group = gfx.Group()
+
+    box1_left = gfx.plane_geometry(width=BOX_SIZE, height=BOX_SIZE*2)
+    box1_left_mesh = gfx.Mesh(box1_left, white)
+    box1_left_mesh.local.rotation = la.quat_from_euler((0, math.pi/2, 0))
+    box1_left_mesh.local.position = (-BOX_SIZE/2, 0, 0)
+
+    box1_right = gfx.plane_geometry(width=BOX_SIZE, height=BOX_SIZE*2)
+    box1_right_mesh = gfx.Mesh(box1_right, white)
+    box1_right_mesh.local.rotation = la.quat_from_euler((0, math.pi/2, 0))
+    box1_right_mesh.local.position = (BOX_SIZE/2, 0, 0)
+
+    box1_back = gfx.plane_geometry(width=BOX_SIZE, height=BOX_SIZE*2)
+    box1_back_mesh = gfx.Mesh(box1_back, white)
+    box1_back_mesh.local.rotation = la.quat_from_euler((0, 0, 0))
+    box1_back_mesh.local.position = (0, 0, BOX_SIZE/2)
+
+    box1_top = gfx.plane_geometry(width=BOX_SIZE, height=BOX_SIZE)
+    box1_top_mesh = gfx.Mesh(box1_top, white)
+    box1_top_mesh.local.rotation = la.quat_from_euler((math.pi/2, 0, 0))
+    box1_top_mesh.local.position = (0, BOX_SIZE, 0)
+
+    box1_bottom = gfx.plane_geometry(width=BOX_SIZE, height=BOX_SIZE)
+    box1_bottom_mesh = gfx.Mesh(box1_bottom, white)
+    box1_bottom_mesh.local.rotation = la.quat_from_euler((math.pi/2, 0, 0))
+    box1_bottom_mesh.local.position = (0, -BOX_SIZE, 0)
+
+    specular = Material((1., 1., 1.), 1.0)
+    box1_front = gfx.plane_geometry(width=BOX_SIZE, height=BOX_SIZE*2)
+    box1_front_mesh = gfx.Mesh(box1_front, specular)
+    box1_front_mesh.local.rotation = la.quat_from_euler((0, 0, 0))
+    box1_front_mesh.local.position = (0, 0, -BOX_SIZE/2)
+
+    box1_group.add(box1_left_mesh)
+    box1_group.add(box1_right_mesh)
+    box1_group.add(box1_back_mesh)
+    box1_group.add(box1_top_mesh)
+    box1_group.add(box1_bottom_mesh)
+    box1_group.add(box1_front_mesh)
+
+    off_set = (BOX_SIZE - ROOM_SIZE) / 2
+    box1_group.local.position = (-off_set-26.5 -2.0, BOX_SIZE -HALF_ROOM_SIZE + 0.05, 29.5+off_set)
+    box1_group.local.rotation = la.quat_from_euler((0, -15 / 180 * math.pi, 0))
+    gfx_scene.add(box1_group)
+
+
+    # box1 = gfx.box_geometry(width=BOX_SIZE, height=BOX_SIZE*2, depth=BOX_SIZE)
+    # box_mesh1 = gfx.Mesh(box1, white)
+    # off_set = (BOX_SIZE - ROOM_SIZE) / 2
+    # box_mesh1.local.position = (-off_set-26.5 -2.0, BOX_SIZE - HALF_ROOM_SIZE, 29.5+off_set)
+    # box_mesh1.local.rotation = la.quat_from_euler((0, -15 / 180 * math.pi, 0))
+    # gfx_scene.add(box_mesh1)
+
+    box2 = gfx.box_geometry(width=BOX_SIZE, height=BOX_SIZE, depth=BOX_SIZE)
+    box_mesh2 = gfx.Mesh(box2, white)
+    off_set = (BOX_SIZE - ROOM_SIZE) / 2
+    box_mesh2.local.position = (-off_set -13.0 + 2.0, off_set, 6.5 + off_set)
+    box_mesh2.local.rotation = la.quat_from_euler((0, 18 / 180 * math.pi, 0))
+    gfx_scene.add(box_mesh2)
+
+
+    scene = Scene.parse_gfx_scene(gfx_scene)
+    triangles, materials = scene.get_buffer_datas()
+
+    return triangles, materials
+
 
 
 def load_wgsl(shader_name):
@@ -113,7 +149,7 @@ def load_wgsl(shader_name):
         return f.read().decode()
 
 
-canvas = WgpuCanvas(title="Raytracing", size=(IMAGE_WIDTH, IMAGE_HEIGHT))
+canvas = WgpuCanvas(title="Raytracing", size=(IMAGE_WIDTH, IMAGE_HEIGHT), max_fps=-1, vsync=False)
 
 adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
 device = adapter.request_device_sync(required_features=["texture-adapter-specific-format-features","float32-filterable"])
@@ -130,10 +166,10 @@ frame_texture = device.create_texture(
     dimension="2d",
 )
 
-spheres, materials = create_scene()
+triangles, materials = create_scene()
 
-sphere_buffer = device.create_buffer_with_data(
-    data=spheres.tobytes(),
+triangles_buffer = device.create_buffer_with_data(
+    data=triangles.tobytes(),
     usage=wgpu.BufferUsage.STORAGE,
 )
 
@@ -167,13 +203,13 @@ common_buffer = device.create_buffer(
 
 camera = OrbitCamera(
     canvas=canvas,
-    fov=45.0,
-    focal_length=5.0,
-    defocus_angle=0.4,
+    fov=40.0,
+    focal_length=20.0,
+    defocus_angle=0.0,
     center=(0.0, 0.0, 0.0),
-    distance=5.0,
-    attitude=math.pi / 24,
-    azimuth=math.pi / 2 * 1.2,
+    distance=110.0,
+    # attitude=math.pi / 24,
+    azimuth=math.pi,
     up=(0.0, 1.0, 0.0),
 )
 
@@ -188,8 +224,8 @@ camera_buffer = device.create_buffer_with_data(
 
 UTIL = load_wgsl("util.wgsl")
 MATERIAL = load_wgsl("material.wgsl")
-RAY = load_wgsl("ray1.wgsl")
-COMPUTE_SHADER = load_wgsl("ray_tracing1.wgsl")
+RAY = load_wgsl("ray2.wgsl")
+COMPUTE_SHADER = load_wgsl("ray_tracing2.wgsl")
 CAMERA = load_wgsl("camera.wgsl")
 
 ray_tracing_src = "\n".join([UTIL, MATERIAL, RAY, CAMERA, COMPUTE_SHADER])
@@ -203,7 +239,7 @@ ray_tracing_pipeline = device.create_compute_pipeline(
         "constants": {
             "WORKGROUP_SIZE_X": COMPUTE_WORKGROUP_SIZE_X,
             "WORKGROUP_SIZE_Y": COMPUTE_WORKGROUP_SIZE_Y,
-            "OBJECTS_COUNT_IN_SCENE": len(spheres),
+            "OBJECTS_COUNT_IN_SCENE": len(triangles),
             "MAX_BOUNCES": MAX_BOUNCES,
         },
     
@@ -214,7 +250,7 @@ ray_tracing_pipeline = device.create_compute_pipeline(
 ray_tracing_bind_group = device.create_bind_group(
     layout=ray_tracing_pipeline.get_bind_group_layout(0),
     entries=[
-        {"binding": 0, "resource": {"buffer": sphere_buffer}},
+        {"binding": 0, "resource": {"buffer": triangles_buffer}},
         {"binding": 1, "resource": {"buffer": materials_buffer}},
         {"binding": 2, "resource": {"buffer": common_buffer}},
         {"binding": 3, "resource": {"buffer": camera_buffer}},

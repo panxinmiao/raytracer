@@ -4,6 +4,18 @@ struct Sphere {
     material_index: u32,
 };
 
+struct Triangle {
+    p0: vec3<f32>,
+    p1: vec3<f32>,
+    p2: vec3<f32>,
+
+    n0: vec3<f32>,
+    n1: vec3<f32>,
+    n2: vec3<f32>,
+
+    material_index: u32,
+};
+
 struct Material {
     color: vec3f,
     specular_or_ior: f32,
