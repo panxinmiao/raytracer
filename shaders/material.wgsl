@@ -16,17 +16,12 @@ struct Triangle {
     material_index: u32,
 };
 
-// struct Material {
-//     color: vec3f,
-//     specular_or_ior: f32,
-// };
-
 struct Material {
-    color: vec3<f32>,           // 基础颜色
-    metallic: f32,              // 金属度
-    emissive: vec3<f32>,        // 自发光颜色
-    roughness: f32,             // 粗糙度
-    ior: f32,                // 折射率
+    color: vec3<f32>,       
+    metallic: f32,              
+    emissive: vec3<f32>,        
+    roughness: f32,            
+    ior: f32,              
 };
 
 struct Scatter {
@@ -47,7 +42,7 @@ fn scatter(ray: Ray, hit: Intersection, material: Material) -> Scatter {
     var attenuation: vec3<f32>;
 
     if material.ior > 0.0 {
-        // 处理折射
+        // refract material
         let ior = material.ior;
         let ref_ratio = select(ior, 1. / ior, is_front_face);
         let cos_theta = abs(incident_dot_normal);
@@ -61,8 +56,9 @@ fn scatter(ray: Ray, hit: Intersection, material: Material) -> Scatter {
         attenuation = material.color;
 
     } else {
-        // 对于镜面材质使用完美反射
         if material.roughness < 0.001 {
+            // Specular reflection
+
             if material.metallic > 0.999 {
                 scatter_dir = reflect(incident, normal);
                 attenuation = material.color;
@@ -73,35 +69,56 @@ fn scatter(ray: Ray, hit: Intersection, material: Material) -> Scatter {
                 attenuation = r0 + (1.0 - r0) * pow(1.0 - cos_theta, 5.0);
             }
         } else {
+            // Rough surface reflection
+            // Use disney BRDF model
+            // 1. For metallic materials, use GGX distribution sampling
+            // 2. For non-metallic materials, use Lambertian distribution sampling
+
             if material.metallic > 0.5{
-                // 使用GGX分布来采样方向而不是余弦分布
+                // GGX Importance Sampling
                 let alpha = max(material.roughness * material.roughness, 0.001);
-                // 使用基于反射方向的采样
-                let reflected = reflect(incident, normal);
                 
-                // 添加基于roughness的随机扰动，但确保扰动更集中在反射方向周围
-                scatter_dir = normalize(reflected + alpha * sample_sphere());
+                // 1. Generate a GGX-distributed half-vector in tangent space
+                let r1 = rand_f32();
+                let r2 = rand_f32();
                 
-                // 确保散射方向在正确的半球
-                if dot(scatter_dir, normal) < 0.0 {
-                    scatter_dir = scatter_dir - 2.0 * dot(scatter_dir, normal) * normal;
+                let phi = 2.0 * PI * r1;
+                let cos_theta = sqrt((1.0 - r2) / (1.0 + (alpha*alpha - 1.0) * r2));
+                let sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+
+                // half-vector in tangent space
+                let h_local = vec3f(sin_theta * cos(phi), sin_theta * sin(phi), cos_theta);
+
+                // 2. convert half-vector to world space
+                let up = select(vec3f(0.0, 0.0, 1.0), vec3f(1.0, 0.0, 0.0), abs(normal.z) > 0.999);
+                let tangent = normalize(cross(up, normal));
+                let bitangent = cross(normal, tangent);
+                
+                let half_vector = normalize(tangent * h_local.x + bitangent * h_local.y + normal * h_local.z);
+
+                // 3. calculate the reflection direction
+                scatter_dir = reflect(incident, half_vector);
+
+                // 4. check if in the correct hemisphere
+                if dot(scatter_dir, normal) <= 0.0 {
+                    // In Monte Carlo method, we should reject samples in the wrong hemisphere
+                    // but for simplicity, we can use a direction in the correct hemisphere
+                    scatter_dir = normal;  // fallback to normal
                 }
             }else{
-                // 随机采样光线方向（基于粗糙度）
-                scatter_dir = normalize(normal + material.roughness * sample_sphere());
+                // Lambertian sampling
+                scatter_dir = normal + sample_sphere();
+                // scatter_dir = normalize(normal + material.roughness * sample_sphere());
             }
 
             scatter_dir = select(scatter_dir, normal, all(scatter_dir == vec3f(0.0)));
-            // 使用 Disney BRDF 计算衰减值
-            let brdf = disney_brdf(normal, view_dir, scatter_dir, material);
+            scatter_dir = normalize(scatter_dir);
 
-            // 计算混合 PDF
+            // todo: simplify brdf and pdf calculation, avoid repeated calculation
+            let brdf = disney_brdf(normal, view_dir, scatter_dir, material);
             let half_vector = normalize(view_dir + scatter_dir);
             let pdf = mixed_pdf(normal, scatter_dir, half_vector, view_dir, material);
-
-            // 避免除以很小的 PDF 值
             attenuation = brdf / max(pdf, EPSILON);
-
         }
 
     }
@@ -150,8 +167,8 @@ fn disney_specular(normal: vec3<f32>, view_dir: vec3<f32>, light_dir: vec3<f32>,
 }
 
 fn disney_brdf(normal: vec3<f32>, view_dir: vec3<f32>, light_dir: vec3<f32>, material: Material) -> vec3<f32> {
-    let f0 = mix(vec3f(0.04), material.color, material.metallic); // 菲涅尔反射率
-    let diffuse_color = material.color * (1.0 - material.metallic); // 漫反射颜色
+    let f0 = mix(vec3f(0.04), material.color, material.metallic);
+    let diffuse_color = material.color * (1.0 - material.metallic);
 
     let diffuse = disney_diffuse(normal, view_dir, light_dir, material.roughness) * diffuse_color;
     let specular = disney_specular(normal, view_dir, light_dir, material.roughness, f0);
@@ -159,8 +176,8 @@ fn disney_brdf(normal: vec3<f32>, view_dir: vec3<f32>, light_dir: vec3<f32>, mat
     return diffuse + specular;
 }
 
-fn lambertian_pdf(normal: vec3<f32>, direction: vec3<f32>) -> f32 {
-    let cos_theta = max(dot(normal, direction), 0.0);
+fn lambertian_pdf(normal: vec3<f32>, light_dir: vec3<f32>) -> f32 {
+    let cos_theta = max(dot(normal, light_dir), 0.0);
     return cos_theta / PI;
 }
 
@@ -177,69 +194,59 @@ fn ggx_pdf(normal: vec3<f32>, half_vector: vec3<f32>, view_dir: vec3<f32>, rough
     return (D * nh) / (4.0 * vh + 0.001);
 }
 
-fn mixed_pdf(normal: vec3<f32>, direction: vec3<f32>, half_vector: vec3<f32>, view_dir: vec3<f32>, material: Material) -> f32 {
-    let lambertian = lambertian_pdf(normal, direction);
-    let ggx = ggx_pdf(normal, half_vector, view_dir, max(material.roughness, 0.001));
-
-    // Fresnel term (Schlick approximation)
-    // let F = fresnel_schlick(max(dot(view_dir, half_vector), 0.0), vec3f(0.04));
-
-    // 根据材质属性调整PDF混合权重
-    let metallic_factor = material.metallic;
+fn roughness_lambertian_pdf(normal: vec3<f32>, light_dir: vec3<f32>, roughness: f32) -> f32 {
+    let cos_theta = max(dot(normal, light_dir), 0.0);
     
-    // 对于金属材质，更多地倾向于使用GGX PDF
-    let weight = mix(0.5, 0.9, metallic_factor);
+    if (roughness < 0.001) {
+        return select(0.001, 100.0, cos_theta > 0.999);
+    }
+    
+    // 基于roughness调整分布的"尖锐度"
+    // roughness越低，分布越集中在法线周围
+    let concentration = 1.0 / (roughness * roughness); 
+    
+    // 使用modified Phong分布来近似这种行为
+    // 当light_dir接近normal时，PDF值更高
+    let normalization_factor = (concentration + 1.0) / (2.0 * PI);
+    return normalization_factor * pow(cos_theta, concentration);
+}
 
-    // Mix the two PDFs
-    return max(mix(lambertian, ggx, weight), 0.001);
+// fn mixed_pdf(normal: vec3<f32>, light_dir: vec3<f32>, half_vector: vec3<f32>, view_dir: vec3<f32>, material: Material) -> f32 {
+//     let lambertian = lambertian_pdf(normal, light_dir);
+//     let ggx = ggx_pdf(normal, half_vector, view_dir, max(material.roughness, 0.001));
+
+//     // Fresnel term (Schlick approximation)
+//     let F = fresnel_schlick(max(dot(view_dir, half_vector), 0.0), vec3f(0.04));
+
+//     let roughness_weight = smoothstep(0.0, 0.5, material.roughness);
+
+//     // for metallic materials, we want to mix the two PDFs based on the metallic factor
+//     let metallic_factor = material.metallic;
+    
+//     // let weight = mix(0.5, 0.9, metallic_factor);
+//     // let weight = mix(F.x, mix(0.5, 0.9, metallic_factor), metallic_factor);
+
+//     let weight = mix(
+//         mix(0.2, 0.8, 1.0 - roughness_weight),  // non-metallic weight
+//         0.95,                                   // metallic weight
+//         material.metallic
+//     );
+
+//     // Mix the two PDFs
+//     return max(mix(lambertian, ggx, weight), 0.001);
+// }
+
+fn mixed_pdf(normal: vec3<f32>, light_dir: vec3<f32>, half_vector: vec3<f32>, view_dir: vec3<f32>, material: Material) -> f32 {
+    if (material.metallic > 0.5) {
+        return ggx_pdf(normal, half_vector, view_dir, max(material.roughness, 0.001));
+    } else {
+        return lambertian_pdf(normal, light_dir);
+    }
 }
 
 fn fresnel_schlick(cos_theta: f32, f0: vec3<f32>) -> vec3<f32> {
     return f0 + (1.0 - f0) * pow(1.0 - cos_theta, 5.0);
 }
-
-// fn scatter(input_ray: Ray, hit: Intersection, material: Material) -> Scatter {
-//     // let scattered = reflect(input_ray.direction, hit.normal);
-//     let incident = normalize(input_ray.direction);
-//     let incident_dot_normal = dot(incident, hit.normal);
-//     let is_front_face = incident_dot_normal < 0.;
-//     let N = select(-hit.normal, hit.normal, is_front_face);
-
-//     let cos_theta = abs(incident_dot_normal);
-
-//     // `ior` only has meaning if the material is transmissive.
-//     let is_transmissive = material.specular_or_ior < 0.;
-//     let is_specular = material.specular_or_ior > 0.;
-
-
-//     var scattered: vec3f;
-//     if is_specular {
-//     // if is_specular || (is_transmissive && cannot_refract) {
-//         scattered = reflect(incident, N);
-//         scattered = normalize(scattered) + sample_sphere() * (1. - EPSILON) * (1- material.specular_or_ior);
-//         if dot(scattered, N) < 0. {
-//             // stop the ray from going inside the object
-//             return Scatter(vec3f(0.), Ray(vec3f(0.), vec3f(0.)));
-//         }
-//     } else if is_transmissive {
-//         let ior = abs(material.specular_or_ior);
-//         let ref_ratio = select(ior, 1. / ior, is_front_face);
-//         let cannot_refract = ref_ratio * ref_ratio * (1.0 - cos_theta * cos_theta) > 1.;
-//         if cannot_refract || schlick(cos_theta, ref_ratio) > rand_f32() {
-//             scattered = reflect(incident, N);
-//         } else {
-//             scattered = refract(incident, N, ref_ratio);
-//         }
-
-//     } else {
-//         scattered = sample_lambertian(N);
-//     }
-//     let output_ray = Ray(point_on_ray(input_ray, hit.t), scattered);
-//     let attenuation = material.color;
-
-
-//     return Scatter(attenuation, output_ray);
-// }
 
 fn schlick(cosine: f32, ref_ratio: f32) -> f32 {
     var r0 = (1.0 - ref_ratio) / (1.0 + ref_ratio);

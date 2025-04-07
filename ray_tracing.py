@@ -17,32 +17,6 @@ COMPUTE_WORKGROUP_SIZE_Y = 8
 MAX_BOUNCES = 50
 
 
-# class Sphere(np.ndarray):
-#     def __new__(cls, center=(0, 0, 0), radius=1, material_index=0):
-#         na = np.zeros(1, dtype=np.dtype([
-#             ('center', np.float32, 3),
-#             ('radius', np.float32),
-#             ('material_index', np.uint32),
-#             ('__padding', np.uint32, 3),
-#         ])).view(cls)
-
-#         na['center'] = center
-#         na['radius'] = radius
-#         na['material_index'] = material_index
-#         return na
-    
-# class Material(np.ndarray):
-#     def __new__(cls, color=(1, 1, 1), specular_or_ior=0):
-#         na = np.zeros(1, dtype=np.dtype([
-#             ('color', np.float32, 3),
-#             ('specular_or_ior', np.float32),
-#         ])).view(cls)
-
-#         na['color'] = color
-#         na['specular_or_ior'] = specular_or_ior
-#         return na
-    
-
 def create_scene():
     ground = Sphere((0, -1000, 0.0), 1000.0, 0)
     ground_mat = Material((0.5, 0.5, 0.5), 0.0)
